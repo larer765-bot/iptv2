@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamWave - Web IPTV Player</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Hls.js for playing .m3u8 live streams -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #0ea5e9;
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans min-h-screen flex flex-col antialiased">
+
+    <!-- Header / Navigation -->
+    <header class="bg-gray-900 border-b border-gray-800 sticky top-0 z-50 px-4 py-3 shadow-lg">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <!-- Logo -->
+            <div class="flex items-center gap-3">
+                <div class="bg-brand-600 p-2.5 rounded-xl shadow-lg shadow-brand-600/20 flex items-center justify-center">
+                    <i class="fa-solid fa-tv text-xl text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        StreamWave <span class="text-xs bg-brand-500/20 text-brand-400 font-semibold px-2 py-0.5 rounded-full border border-brand-500/30">Player</span>
+                    </h1>
+                </div>
+            </div>
+
+            <!-- Playlist URL Input Box -->
+            <div class="flex flex-1 max-w-xl w-full items-center gap-2">
+                <div class="relative flex-1">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                        <i class="fa-solid fa-link"></i>
+                    </div>
+                    <input type="text" id="playlist-url" 
+                        class="w-full bg-gray-950/80 border border-gray-800 rounded-xl py-2 pl-10 pr-4 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
+                        placeholder="Entrez l'URL de votre playlist M3U..." />
+                </div>
+                <button id="btn-load" onclick="loadPlaylist()" class="bg-brand-600 hover:bg-brand-500 text-white font-medium text-sm px-4 py-2 rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fa-solid fa-cloud-arrow-down"></i> Charger
+                </button>
+            </div>
+
+            <!-- Presets / Quick Actions -->
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+                <button onclick="loadPreset('https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8')" 
+                    class="bg-brand-500/10 hover:bg-brand-500/20 text-xs text-brand-400 font-semibold px-3 py-1.5 rounded-lg border border-brand-500/30 transition-all flex items-center gap-1">
+                    <i class="fa-solid fa-play text-brand-400 animate-pulse"></i> Free-TV (Par défaut)
+                </button>
+                <button onclick="toggleFavoritesOnly()" 
+                    class="bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 font-medium px-3 py-1.5 rounded-lg border border-gray-700 transition-all flex items-center gap-1">
+                    <i id="fav-view-icon" class="fa-regular fa-star text-amber-400"></i> <span id="fav-view-text">Favoris</span>
+                </button>
+                <button onclick="openHelpModal()" 
+                    class="bg-amber-500/10 hover:bg-amber-500/20 text-xs text-amber-400 font-bold px-3 py-1.5 rounded-lg border border-amber-500/30 transition-all flex items-center gap-1">
+                    <i class="fa-solid fa-circle-question"></i> Aide / CORS
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- App Body Layout -->
+    <main class="flex-1 max-w-7xl mx-auto w-full p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-hidden">
+        
+        <!-- Left Sidebar: Channels List & Categories -->
+        <section class="lg:col-span-4 flex flex-col bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden h-[calc(100vh-140px)] shadow-xl">
+            <!-- Search & Filters -->
+            <div class="p-4 border-b border-gray-800 bg-gray-900/50 space-y-3">
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400 pointer-events-none">
+                        <i class="fa-solid fa-magnifying-glass text-sm"></i>
+                    </span>
+                    <input type="text" id="channel-search" oninput="filterChannels()" 
+                        class="w-full bg-gray-950 border border-gray-800 rounded-xl py-2 pl-9 pr-4 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-brand-500 transition-all" 
+                        placeholder="Rechercher une chaîne..." />
+                </div>
+
+                <!-- Category Selector -->
+                <div class="flex items-center gap-2">
+                    <label for="category-select" class="text-xs text-gray-400 whitespace-nowrap">Catégorie:</label>
+                    <select id="category-select" onchange="filterChannels()" 
+                        class="w-full bg-gray-950 border border-gray-800 rounded-lg py-1 px-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500">
+                        <option value="ALL">Toutes les catégories</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Channels Container List -->
+            <div id="channel-list" class="flex-1 overflow-y-auto divide-y divide-gray-800/60 p-2 space-y-1">
+                <div class="flex flex-col items-center justify-center h-full text-center text-gray-500 p-6">
+                    <i class="fa-solid fa-tv text-4xl mb-3 opacity-40"></i>
+                    <p class="text-sm">Aucune chaîne chargée.</p>
+                    <p class="text-xs mt-1">Veuillez entrer une playlist valide ou cliquer sur le bouton par défaut.</p>
+                </div>
+            </div>
+
+            <!-- Channel Stats Footer -->
+            <div class="p-3 bg-gray-950 border-t border-gray-800 text-xs text-gray-400 flex justify-between items-center">
+                <span>Total: <strong id="stat-total" class="text-gray-200">0</strong> chaînes</span>
+                <span id="stat-filtered-wrapper" class="hidden">Visibles: <strong id="stat-filtered" class="text-gray-200">0</strong></span>
+            </div>
+        </section>
+
+        <!-- Right Side: Player Screen & Current Play details -->
+        <section class="lg:col-span-8 flex flex-col gap-6">
+            <!-- Video Player Widget -->
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-xl aspect-video relative group">
+                <video id="video-player" controls autoplay class="w-full h-full bg-black object-contain"></video>
+                
+                <!-- Loading Overlay -->
+                <div id="player-loader" class="absolute inset-0 bg-black/85 flex flex-col items-center justify-center transition-opacity duration-300 opacity-0 pointer-events-none">
+                    <div class="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                    <p class="text-sm font-medium text-gray-300">Chargement du flux en cours...</p>
+                </div>
+
+                <!-- Custom Error Diagnostic Overlay -->
+                <div id="player-error" class="absolute inset-0 bg-gray-950/95 flex flex-col items-center justify-center text-center p-6 hidden">
+                    <div class="bg-red-500/10 border border-red-500/30 w-16 h-16 rounded-2xl flex items-center justify-center text-2xl text-red-500 mb-4 shadow-lg">
+                        <i class="fa-solid fa-circle-exclamation"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-2">Impossible de charger cette chaîne</h3>
+                    <p id="error-diagnostic-text" class="text-sm text-gray-400 max-w-md mb-4 leading-relaxed">
+                        Le flux n'a pas pu être lu. Cela est généralement dû à une sécurité CORS de votre navigateur ou à un lien expiré.
+                    </p>
+                    <div class="flex gap-2">
+                        <button onclick="openHelpModal()" class="bg-amber-500 hover:bg-amber-600 text-gray-950 font-bold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-md">
+                            <i class="fa-solid fa-wrench"></i> Résoudre ce problème (CORS)
+                        </button>
+                        <button onclick="retryCurrentStream()" class="bg-gray-800 hover:bg-gray-700 text-white font-semibold text-xs px-4 py-2 rounded-xl transition-all border border-gray-700">
+                            Réessayer
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Splash / No Stream Loaded Overlay -->
+                <div id="player-splash" class="absolute inset-0 bg-gray-950 flex flex-col items-center justify-center text-center p-6">
+                    <div class="bg-gray-900 border border-gray-800 w-16 h-16 rounded-2xl flex items-center justify-center text-2xl text-brand-500 mb-4 shadow-lg">
+                        <i class="fa-solid fa-circle-play animate-pulse"></i>
+                    </div>
+                    <h3 class="text-lg font-bold text-white mb-1">Prêt à diffuser</h3>
+                    <p class="text-sm text-gray-400 max-w-sm">Sélectionnez une chaîne dans la liste de gauche pour démarrer la lecture.</p>
+                </div>
+            </div>
+
+            <!-- Currently Playing Info Card -->
+            <div id="now-playing-card" class="bg-gray-900 border border-gray-800 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hidden">
+                <div class="flex items-center gap-4 overflow-hidden w-full">
+                    <div class="bg-gray-950 border border-gray-800 rounded-xl p-2 w-16 h-16 flex items-center justify-center overflow-hidden shrink-0">
+                        <img id="now-playing-logo" src="" alt="Logo" class="max-w-full max-h-full object-contain hidden" onerror="this.classList.add('hidden'); document.getElementById('now-playing-fallback').classList.remove('hidden')">
+                        <span id="now-playing-fallback" class="text-xl font-bold text-brand-500 select-none"><i class="fa-solid fa-tv"></i></span>
+                    </div>
+                    <div class="overflow-hidden">
+                        <div id="now-playing-category" class="text-xs font-semibold text-brand-400 tracking-wider uppercase mb-0.5">Catégorie</div>
+                        <h2 id="now-playing-title" class="text-lg font-bold text-white line-clamp-1">Nom de la chaîne</h2>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span id="protocol-badge" class="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">HTTP</span>
+                            <div id="now-playing-url" class="text-xs text-gray-500 font-mono break-all select-all truncate max-w-md">URL du flux</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 w-full md:w-auto shrink-0 justify-end">
+                    <button id="now-playing-fav-btn" onclick="toggleActiveFavorite()" 
+                        class="px-4 py-2 border border-gray-800 hover:border-amber-500 bg-gray-950/40 hover:bg-amber-500/10 text-amber-400 font-medium text-sm rounded-xl transition-all flex items-center gap-2">
+                        <i class="fa-regular fa-star"></i> <span>Favoris</span>
+                    </button>
+                    <button onclick="copyStreamURL()" 
+                        class="px-4 py-2 border border-gray-800 hover:border-gray-700 bg-gray-950/40 text-gray-300 hover:text-white font-medium text-sm rounded-xl transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-copy"></i> <span>Copier le lien</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Diagnostic Help Modal / CORS Bypass Guide -->
+    <div id="help-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl relative">
+            <button onclick="closeHelpModal()" class="absolute top-4 right-4 text-gray-400 hover:text-white text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="bg-amber-500/10 p-2.5 rounded-xl text-amber-500">
+                    <i class="fa-solid fa-shield-halved text-xl"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white">Guide : Pourquoi les chaînes bloquent ?</h3>
+            </div>
+            
+            <div class="space-y-4 text-sm text-gray-300 leading-relaxed max-h-[70vh] overflow-y-auto pr-2">
+                <p>
+                    Les navigateurs web modernes ont des règles de sécurité très strictes appelées <strong>CORS</strong>. Si l'hébergeur de la chaîne de télévision n'a pas autorisé les sites tiers, le navigateur refuse de lire le flux.
+                </p>
+
+                <div class="border-l-4 border-amber-500 bg-amber-500/5 p-3 rounded-r-xl">
+                    <h4 class="font-bold text-amber-400 mb-1"><i class="fa-solid fa-circle-info"></i> La solution magique (Extension de navigateur)</h4>
+                    <p class="text-xs">
+                        Pour contourner cette sécurité et faire fonctionner 100% des flux, il vous suffit d'installer une extension d'un clic pour désactiver temporairement CORS sur votre navigateur.
+                    </p>
+                </div>
+
+                <div class="space-y-3">
+                    <h4 class="font-bold text-white">Comment faire ?</h4>
+                    <div class="flex items-start gap-2.5">
+                        <span class="bg-gray-800 text-gray-300 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</span>
+                        <div>
+                            <strong>Installez l'extension CORS :</strong><br>
+                            <a href="https://chromewebstore.google.com/detail/allow-cors-access-control/lhobafceclocbofbhgofmcmgnoieeccb" target="_blank" class="text-brand-400 hover:underline font-semibold flex items-center gap-1 mt-0.5">
+                                <i class="fa-brands fa-chrome"></i> Télécharger pour Chrome, Edge, Brave <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                            </a>
+                            <a href="https://addons.mozilla.org/fr/firefox/addon/access-control-allow-origin/" target="_blank" class="text-brand-400 hover:underline font-semibold flex items-center gap-1 mt-1">
+                                <i class="fa-brands fa-firefox"></i> Télécharger pour Firefox <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-start gap-2.5">
+                        <span class="bg-gray-800 text-gray-300 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</span>
+                        <div>
+                            <strong>Activez l'extension :</strong> Cliquez sur l'icône de l'extension installée dans votre barre d'outils et assurez-vous de l'allumer (elle devient généralement verte).
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-2.5">
+                        <span class="bg-gray-800 text-gray-300 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</span>
+                        <div>
+                            <strong>Actualisez la page :</strong> Rechargez notre site et lancez votre chaîne. Elle démarrera instantanément !
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="border-gray-800 my-2">
+
+                <div>
+                    <h4 class="font-bold text-white mb-1">Autre cause : Contenu mixte (HTTP sur HTTPS)</h4>
+                    <p class="text-xs text-gray-400">
+                        Si l'adresse de notre application commence par <code>https://</code>, le navigateur bloquera les flux commençant par <code>http://</code>. Pour éviter cela, lancez notre application localement sur votre ordinateur ou téléchargez l'index.html pour l'exécuter en double-cliquant dessus.
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button onclick="closeHelpModal()" class="bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md">
+                    J'ai compris
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-950 border-t border-gray-900 py-4 text-center text-xs text-gray-600">
+        <p>&copy; 2026 StreamWave Web Player. Utilisant Hls.js. Les flux proviennent de votre playlist utilisateur.</p>
+    </footer>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-300 bg-gray-900 border border-gray-800 text-gray-200 text-sm px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5">
+        <i class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+        <span id="toast-message">Notification</span>
+    </div>
+
+    <script>
+        // App State
+        let channelsList = [];
+        let favoriteChannels = JSON.parse(localStorage.getItem('streamwave_favorites')) || [];
+        let activeChannel = null;
+        let showFavoritesOnly = false;
+        let hls = null;
+        let errorTimeout = null;
+
+        // Load page essentials
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedPlaylistUrl = localStorage.getItem('streamwave_last_playlist') || 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8';
+            document.getElementById('playlist-url').value = savedPlaylistUrl;
+            loadPreset(savedPlaylistUrl);
+
+            // Register global video error handlers for direct fallbacks
+            const video = document.getElementById('video-player');
+            video.addEventListener('error', (e) => {
+                if (activeChannel) {
+                    handlePlaybackError("Erreur média directe du navigateur (CORS ou flux hors ligne possible).");
+                }
+            });
+        });
+
+        function parseM3U(data) {
+            const lines = data.split('\n');
+            const parsedChannels = [];
+            let currentChannel = {};
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+
+                if (line.startsWith('#EXTINF:')) {
+                    // Extract channel information
+                    currentChannel = {};
+                    
+                    // Name extraction
+                    const commaIndex = line.lastIndexOf(',');
+                    if (commaIndex !== -1) {
+                        currentChannel.name = line.substring(commaIndex + 1).trim();
+                    } else {
+                        currentChannel.name = "Chaîne sans nom";
+                    }
+
+                    // Logo extraction
+                    const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
+                    currentChannel.logo = logoMatch ? logoMatch[1] : '';
+
+                    // Group / Category extraction
+                    const groupMatch = line.match(/group-title="([^"]+)"/i);
+                    currentChannel.category = groupMatch ? groupMatch[1] : 'Non catégorisé';
+
+                    // ID extraction
+                    const idMatch = line.match(/tvg-id="([^"]+)"/i);
+                    currentChannel.id = idMatch ? idMatch[1] : currentChannel.name.replace(/\s+/g, '-').toLowerCase();
+
+                } else if (line.startsWith('http://') || line.startsWith('https://')) {
+                    currentChannel.url = line;
+                    parsedChannels.push(currentChannel);
+                    currentChannel = {};
+                }
+            }
+            return parsedChannels;
+        }
+
+        function loadPreset(url) {
+            document.getElementById('playlist-url').value = url;
+            loadPlaylist();
+        }
+
+        // Fetch playlist from URL
+        async function loadPlaylist() {
+            const urlInput = document.getElementById('playlist-url').value.trim();
+            if (!urlInput) {
+                showToast("Veuillez entrer une URL de playlist valide", "error");
+                return;
+            }
+
+            showLoader(true, "Récupération de la playlist...");
+
+            try {
+                let response;
+                try {
+                    response = await fetch(urlInput);
+                } catch (corsErr) {
+                    // Fallback to CORS proxy
+                    const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput)}`;
+                    response = await fetch(corsProxyUrl);
+                }
+
+                if (!response.ok) throw new Error("Impossible de récupérer la playlist.");
+
+                const playlistText = await response.text();
+                channelsList = parseM3U(playlistText);
+
+                if (channelsList.length === 0) {
+                    showToast("Aucune chaîne trouvée dans ce fichier M3U.", "error");
+                } else {
+                    localStorage.setItem('streamwave_last_playlist', urlInput);
+                    populateCategories();
+                    renderChannels();
+                    showToast(`${channelsList.length} chaînes chargées avec succès !`);
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Erreur de chargement. Vérifiez l'adresse ou la connexion.", "error");
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        function populateCategories() {
+            const selectEl = document.getElementById('category-select');
+            selectEl.innerHTML = '<option value="ALL">Toutes les catégories</option>';
+            
+            const categories = [...new Set(channelsList.map(ch => ch.category))].sort();
+            
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.textContent = `${cat}`;
+                selectEl.appendChild(opt);
+            });
+        }
+
+        function renderChannels() {
+            const listEl = document.getElementById('channel-list');
+            const searchVal = document.getElementById('channel-search').value.toLowerCase();
+            const selectedCategory = document.getElementById('category-select').value;
+            
+            listEl.innerHTML = '';
+            
+            const filtered = channelsList.filter(channel => {
+                const matchesSearch = channel.name.toLowerCase().includes(searchVal);
+                const matchesCategory = selectedCategory === 'ALL' || channel.category === selectedCategory;
+                const matchesFavorite = !showFavoritesOnly || isFavorite(channel);
+                return matchesSearch && matchesCategory && matchesFavorite;
+            });
+
+            document.getElementById('stat-total').textContent = channelsList.length;
+            if (searchVal || selectedCategory !== 'ALL' || showFavoritesOnly) {
+                document.getElementById('stat-filtered-wrapper').classList.remove('hidden');
+                document.getElementById('stat-filtered').textContent = filtered.length;
+            } else {
+                document.getElementById('stat-filtered-wrapper').classList.add('hidden');
+            }
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="flex flex-col items-center justify-center p-8 text-center text-gray-500">
+                        <i class="fa-solid fa-folder-open text-2xl mb-2 opacity-30"></i>
+                        <p class="text-xs">Aucun résultat ne correspond à votre filtre.</p>
+                    </div>`;
+                return;
+            }
+
+            filtered.forEach((channel) => {
+                const isFav = isFavorite(channel);
+                const activeClass = (activeChannel && activeChannel.url === channel.url) 
+                    ? 'bg-brand-500/10 border-brand-500/40 text-white font-bold' 
+                    : 'border-transparent text-gray-300 hover:bg-gray-800/40 hover:text-white';
+
+                const card = document.createElement('div');
+                card.className = `flex items-center justify-between p-2 rounded-xl border transition-all cursor-pointer ${activeClass} group/item`;
+                
+                card.addEventListener('click', (e) => {
+                    if (!e.target.closest('.fav-btn')) {
+                        playStream(channel);
+                    }
+                });
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <div class="w-10 h-10 bg-gray-950 rounded-lg p-1.5 flex items-center justify-center shrink-0 border border-gray-800 relative">
+                            ${channel.logo 
+                                ? `<img src="${channel.logo}" alt="" class="max-w-full max-h-full object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">` 
+                                : ''
+                            }
+                            <i class="fa-solid fa-tv text-xs opacity-50" style="display: ${channel.logo ? 'none' : 'block'};"></i>
+                        </div>
+                        <div class="overflow-hidden">
+                            <h4 class="text-sm font-semibold truncate group-hover/item:text-white leading-snug">${channel.name}</h4>
+                            <p class="text-[10px] text-gray-500 truncate mt-0.5">${channel.category}</p>
+                        </div>
+                    </div>
+                    <button class="fav-btn p-2 hover:bg-gray-800 rounded-lg text-gray-500 hover:text-amber-400 transition-colors shrink-0">
+                        <i class="${isFav ? 'fa-solid text-amber-400' : 'fa-regular'} fa-star"></i>
+                    </button>
+                `;
+
+                card.querySelector('.fav-btn').addEventListener('click', (e) => {
+                    toggleFavorite(channel);
+                    renderChannels();
+                    updateNowPlayingFavoriteButton();
+                });
+
+                listEl.appendChild(card);
+            });
+        }
+
+        function filterChannels() {
+            renderChannels();
+        }
+
+        function isFavorite(channel) {
+            return favoriteChannels.some(fav => fav.url === channel.url);
+        }
+
+        function toggleFavorite(channel) {
+            if (isFavorite(channel)) {
+                favoriteChannels = favoriteChannels.filter(fav => fav.url !== channel.url);
+                showToast(`Retiré des favoris`);
+            } else {
+                favoriteChannels.push(channel);
+                showToast(`Ajouté aux favoris`);
+            }
+            localStorage.setItem('streamwave_favorites', JSON.stringify(favoriteChannels));
+        }
+
+        function toggleFavoritesOnly() {
+            showFavoritesOnly = !showFavoritesOnly;
+            const btnIcon = document.getElementById('fav-view-icon');
+            const btnText = document.getElementById('fav-view-text');
+            
+            if (showFavoritesOnly) {
+                btnIcon.className = 'fa-solid fa-star text-amber-400';
+                btnText.textContent = 'Tout voir';
+                showToast("Affichage des favoris uniquement");
+            } else {
+                btnIcon.className = 'fa-regular fa-star text-amber-400';
+                btnText.textContent = 'Favoris';
+                showToast("Affichage de toutes les chaînes");
+            }
+            renderChannels();
+        }
+
+        function toggleActiveFavorite() {
+            if (activeChannel) {
+                toggleFavorite(activeChannel);
+                updateNowPlayingFavoriteButton();
+                renderChannels();
+            }
+        }
+
+        function updateNowPlayingFavoriteButton() {
+            const favBtn = document.getElementById('now-playing-fav-btn');
+            if (!favBtn || !activeChannel) return;
+
+            const isFav = isFavorite(activeChannel);
+            favBtn.innerHTML = isFav 
+                ? `<i class="fa-solid fa-star text-amber-400"></i> <span>Favori</span>` 
+                : `<i class="fa-regular fa-star"></i> <span>Ajouter</span>`;
+        }
+
+        function playStream(channel) {
+            activeChannel = channel;
+            clearTimeout(errorTimeout);
+            
+            const video = document.getElementById('video-player');
+            const splash = document.getElementById('player-splash');
+            const loader = document.getElementById('player-loader');
+            const errOverlay = document.getElementById('player-error');
+            
+            splash.classList.add('hidden');
+            errOverlay.classList.add('hidden');
+            loader.classList.remove('opacity-0');
+            
+            // Setup meta card
+            document.getElementById('now-playing-card').classList.remove('hidden');
+            document.getElementById('now-playing-title').textContent = channel.name;
+            document.getElementById('now-playing-category').textContent = channel.category;
+            document.getElementById('now-playing-url').textContent = channel.url;
+            
+            // Badge HTTP/HTTPS status warning
+            const badge = document.getElementById('protocol-badge');
+            const isHttpsUrl = channel.url.startsWith('https://');
+            const appIsHttps = window.location.protocol === 'https:';
+            
+            if (isHttpsUrl) {
+                badge.className = "text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                badge.textContent = "HTTPS (Sécurisé)";
+            } else {
+                badge.className = "text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30";
+                badge.textContent = appIsHttps ? "HTTP (Bloqué par HTTPS)" : "HTTP (Insecure)";
+            }
+
+            // Set image logo
+            const imgLogo = document.getElementById('now-playing-logo');
+            const fallbackLogo = document.getElementById('now-playing-fallback');
+            if (channel.logo) {
+                imgLogo.src = channel.logo;
+                imgLogo.classList.remove('hidden');
+                fallbackLogo.classList.add('hidden');
+            } else {
+                imgLogo.classList.add('hidden');
+                fallbackLogo.classList.remove('hidden');
+            }
+
+            updateNowPlayingFavoriteButton();
+
+            // Destroy existing hls instance
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+
+            // Set a watchdog timeout: if video has not parsed or metadata is not loaded in 7 seconds, trigger diagnostics
+            errorTimeout = setTimeout(() => {
+                if (video.paused && loader.classList.contains('opacity-0') === false) {
+                    handlePlaybackError("Le flux met trop de temps à s'initialiser. Le serveur distant est probablement hors ligne ou bloque la requête.");
+                }
+            }, 7500);
+
+            // Playback bind
+            if (Hls.isSupported() && channel.url.endsWith('.m3u8')) {
+                hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    xhrSetup: function (xhr, url) {
+                        // Allow tracing
+                        xhr.withCredentials = false;
+                    }
+                });
+                hls.loadSource(channel.url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    clearTimeout(errorTimeout);
+                    video.play().catch(e => {
+                        console.warn("Autoplay block:", e);
+                    });
+                    loader.classList.add('opacity-0');
+                });
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        clearTimeout(errorTimeout);
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                handlePlaybackError("Erreur Réseau (CORS bloquant ou serveur distant injoignable).");
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                handlePlaybackError("Erreur Média (Décodage impossible ou flux incompatible).");
+                                break;
+                            default:
+                                handlePlaybackError("Erreur de décodage fatale.");
+                                break;
+                        }
+                    }
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = channel.url;
+                video.addEventListener('loadedmetadata', () => {
+                    clearTimeout(errorTimeout);
+                    video.play();
+                    loader.classList.add('opacity-0');
+                });
+            } else {
+                video.src = channel.url;
+                video.play()
+                    .then(() => {
+                        clearTimeout(errorTimeout);
+                        loader.classList.add('opacity-0');
+                    })
+                    .catch(err => {
+                        clearTimeout(errorTimeout);
+                        handlePlaybackError("Format de flux direct non pris en charge ou bloqué.");
+                    });
+            }
+
+            renderChannels();
+        }
+
+        function handlePlaybackError(details) {
+            const loader = document.getElementById('player-loader');
+            const errOverlay = document.getElementById('player-error');
+            const errText = document.getElementById('error-diagnostic-text');
+            
+            loader.classList.add('opacity-0');
+            errOverlay.classList.remove('hidden');
+
+            const isHttpsPage = window.location.protocol === 'https:';
+            const isHttpStream = activeChannel && activeChannel.url.startsWith('http://');
+
+            let customMessage = `<strong>Détail technique :</strong> ${details}<br><br>`;
+            
+            if (isHttpsPage && isHttpStream) {
+                customMessage += `⚠️ <strong>Sécurité de contenu mixte :</strong> Vous consultez ce lecteur sur un site sécurisé (HTTPS), mais la chaîne utilise un lien non sécurisé (HTTP). Le navigateur bloque cela d'office. <br><br>👉 <strong>Solution :</strong> Pour contourner cela, téléchargez et exécutez ce fichier 'index.html' directement sur votre ordinateur en local !`;
+            } else {
+                customMessage += `🔒 <strong>Blocage CORS ou Lien mort :</strong> La plupart des hébergeurs de flux interdisent la diffusion sur les sites tiers. <br><br>👉 <strong>Solution :</strong> Installez et activez une extension de contournement CORS sur votre navigateur pour faire fonctionner toutes les chaînes instantanément (Bouton Aide ci-dessous).`;
+            }
+
+            errText.innerHTML = customMessage;
+        }
+
+        function retryCurrentStream() {
+            if (activeChannel) {
+                playStream(activeChannel);
+            }
+        }
+
+        function copyStreamURL() {
+            if (!activeChannel) return;
+            document.execCommand('copy');
+            // Standard fallback trigger
+            navigator.clipboard.writeText(activeChannel.url)
+                .then(() => showToast("Lien copié dans le presse-papiers !"))
+                .catch(err => showToast("Impossible de copier le lien", "error"));
+        }
+
+        function showLoader(show, text = "Chargement...") {
+            const btn = document.getElementById('btn-load');
+            if (show) {
+                btn.disabled = true;
+                btn.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i>`;
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fa-solid fa-cloud-arrow-down"></i>`;
+            }
+        }
+
+        // Help Modal handlers
+        function openHelpModal() {
+            const modal = document.getElementById('help-modal');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+            }, 50);
+        }
+
+        function closeHelpModal() {
+            const modal = document.getElementById('help-modal');
+            modal.classList.add('opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        function showToast(message, type = "success") {
+            const toast = document.getElementById('toast');
+            const messageEl = document.getElementById('toast-message');
+            
+            messageEl.textContent = message;
+            
+            if (type === "error") {
+                toast.className = "fixed bottom-5 right-5 z-50 transform translate-y-0 opacity-100 transition-all duration-300 bg-gray-900 border border-red-800 text-red-200 text-sm px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5";
+                toast.querySelector('i').className = "fa-solid fa-circle-exclamation text-red-400 text-base";
+            } else {
+                toast.className = "fixed bottom-5 right-5 z-50 transform translate-y-0 opacity-100 transition-all duration-300 bg-gray-900 border border-emerald-800 text-emerald-200 text-sm px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5";
+                toast.querySelector('i').className = "fa-solid fa-circle-check text-emerald-400 text-base";
+            }
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-10', 'opacity-0');
+                toast.classList.remove('translate-y-0', 'opacity-100');
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
